@@ -23,9 +23,12 @@ pip install -r requirements.txt
 
 ```bash
 python train.py --epochs 5 --batch-size 64 --learning-rate 1e-3
+python train.py --model cnn --epochs 5 --batch-size 64 --learning-rate 1e-3
+python train.py --model resnet18 --epochs 5 --batch-size 64 --learning-rate 1e-3
 ```
 
-The script saves a model to `mobilenet_cifar10.pth` by default.
+Supported backbones include `mobilenet_v2`, `resnet18` (also `resnet-18`), and `cnn`.
+The script saves a model to `model_cifar10.pth` by default unless you pass `--output`.
 
 ## Notes
 

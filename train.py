@@ -93,8 +93,23 @@ def set_seed(seed: int = 42) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def normalize_model_name(model_name: str) -> str:
+    name = model_name.strip().lower().replace("-", "_")
+    aliases = {
+        "mobilenet": "mobilenet_v2",
+        "mobilenet_v2": "mobilenet_v2",
+        "resnet": "resnet18",
+        "resnet_18": "resnet18",
+        "resnet18": "resnet18",
+        "cnn": "cnn",
+        "simple_cnn": "cnn",
+        "simplecnn": "cnn",
+    }
+    return aliases.get(name, name)
+
+
 def build_model(model_name: str = "mobilenet_v2", num_classes: int = 10) -> nn.Module:
-    normalized_name = model_name.lower().replace("-", "_")
+    normalized_name = normalize_model_name(model_name)
 
     if normalized_name in {"mobilenet", "mobilenet_v2"}:
         model = mobilenet_v2(weights=None)
@@ -111,7 +126,7 @@ def build_model(model_name: str = "mobilenet_v2", num_classes: int = 10) -> nn.M
         model.fc = nn.Linear(model.fc.in_features, num_classes)
         return model
 
-    if normalized_name in {"cnn", "simple_cnn", "simple_cnn"}:
+    if normalized_name in {"cnn", "simple_cnn"}:
         return SimpleCNN(num_classes=num_classes)
 
     available = ["mobilenet_v2", "resnet18", "cnn"]
@@ -190,7 +205,7 @@ def train_one_epoch(model: nn.Module, loader: DataLoader, optimizer: torch.optim
 
 def main():
     parser = argparse.ArgumentParser(description="Train a CIFAR-10 classifier with a configurable backbone.")
-    parser.add_argument("--model", choices=["mobilenet_v2", "resnet18", "cnn"], default="mobilenet_v2", help="Model backbone to train.")
+    parser.add_argument("--model", type=str, default="mobilenet_v2", help="Model backbone to train (e.g. mobilenet_v2, resnet18, cnn, resnet-18).")
     parser.add_argument("--epochs", '-e', type=int, default=10, help="Number of training epochs.")
     parser.add_argument("--batch-size", '-b', type=int, default=64, help="Training batch size.")
     parser.add_argument("--learning-rate", '-lr', type=float, default=3e-4, help="Optimizer learning rate.")
@@ -200,7 +215,8 @@ def main():
 
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = build_model(model_name=args.model)
+    model_name = normalize_model_name(args.model)
+    model = build_model(model_name=model_name)
     model.to(device)
 
     train_loader, test_loader = build_loaders(batch_size=args.batch_size, synthetic=args.synthetic)
