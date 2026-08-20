@@ -17,20 +17,29 @@ def build_member_dataset(num_samples: int = 500, transform=None):
     return dataset
 
 
-def build_nonmember_dataset(num_samples: int = 500, transform=None, allow_download: bool = False):
+def build_nonmember_dataset(num_samples: int = 500, transform=None, dataset_name: str = "cifar10", allow_download: bool = False):
     dataset_path = "./data"
-    dataset_exists = False
-    if Path(dataset_path, "cifar-10-batches-py").exists():
-        dataset_exists = True
 
-    if not dataset_exists and allow_download:
-        dataset = datasets.CIFAR10(root=dataset_path, train=False, download=True, transform=transform)
-    elif not dataset_exists:
-        raise FileNotFoundError(
-            "CIFAR-10 test data is not available locally. Download it first or pass --allow-download."
-        )
+    if dataset_name == "svhn":
+        svhn_exists = Path(dataset_path, "test_32x32.mat").exists()
+        if not svhn_exists and allow_download:
+            dataset = datasets.SVHN(root=dataset_path, split="test", download=True, transform=transform)
+        elif not svhn_exists:
+            raise FileNotFoundError(
+                "SVHN test data is not available locally. Download it first or pass --allow-download."
+            )
+        else:
+            dataset = datasets.SVHN(root=dataset_path, split="test", download=False, transform=transform)
     else:
-        dataset = datasets.CIFAR10(root=dataset_path, train=False, download=False, transform=transform)
+        cifar_exists = Path(dataset_path, "cifar-10-batches-py").exists()
+        if not cifar_exists and allow_download:
+            dataset = datasets.CIFAR10(root=dataset_path, train=False, download=True, transform=transform)
+        elif not cifar_exists:
+            raise FileNotFoundError(
+                "CIFAR-10 test data is not available locally. Download it first or pass --allow-download."
+            )
+        else:
+            dataset = datasets.CIFAR10(root=dataset_path, train=False, download=False, transform=transform)
 
     if num_samples < len(dataset):
         dataset = torch.utils.data.Subset(dataset, list(range(num_samples)))
@@ -49,8 +58,8 @@ def extract_logits(model, loader, device):
     return torch.cat(logits_list, dim=0), torch.cat(labels_list, dim=0)
 
 
-def train_shadow_model(train_loader, device, epochs=5, lr=1e-3):
-    model = build_model().to(device)
+def train_shadow_model(train_loader, device, model_name: str = "mobilenet_v2", epochs=5, lr=1e-3):
+    model = build_model(model_name=model_name).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
 
@@ -100,13 +109,15 @@ def train_attack_classifier(features_in, labels_in, features_out, labels_out):
 
 def main():
     parser = argparse.ArgumentParser(description="Membership inference attack against a victim model.")
-    parser.add_argument("--victim-path", type=str, default="mobilenet_cifar10.pth", help="Path to victim checkpoint.")
+    parser.add_argument("--victim-path", type=str, default="model_cifar10.pth", help="Path to victim checkpoint.")
+    parser.add_argument("--model", choices=["mobilenet_v2", "resnet18", "cnn"], default="mobilenet_v2", help="Model architecture to train and attack.")
     parser.add_argument("--epochs", type=int, default=5, help="Shadow-model training epochs.")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size.")
     parser.add_argument("--learning-rate", type=float, default=1e-3, help="Attack training rate.")
-    parser.add_argument("--samples", type=int, default=500, help="Number of CIFAR-10 test samples to use as non-members.")
-    parser.add_argument("--use-real-cifar-test", action="store_true", help="Use the real CIFAR-10 test set as the non-member pool.")
-    parser.add_argument("--allow-download", action="store_true", help="Allow downloading CIFAR-10 when the test split is missing.")
+    parser.add_argument("--samples", type=int, default=500, help="Number of samples to use as non-members.")
+    parser.add_argument("--dataset", choices=["cifar10", "svhn"], default="cifar10", help="Non-member dataset to use for the attack.")
+    parser.add_argument("--use-real-cifar-test", action="store_true", help="Deprecated alias for --dataset cifar10 with a real CIFAR-10 test set.")
+    parser.add_argument("--allow-download", action="store_true", help="Allow downloading the dataset when the test split is missing.")
     args = parser.parse_args()
 
     set_seed(42)
@@ -119,19 +130,21 @@ def main():
         ]
     )
 
-    member_data = build_member_dataset(num_samples=args.samples, transform=transform)
+    dataset_name = args.dataset
     if args.use_real_cifar_test:
-        nonmember_data = build_nonmember_dataset(
-            num_samples=args.samples,
-            transform=transform,
-            allow_download=args.allow_download,
-        )
-    else:
-        nonmember_data = build_nonmember_dataset(num_samples=args.samples, transform=transform, allow_download=args.allow_download)
+        dataset_name = "cifar10"
+
+    member_data = build_member_dataset(num_samples=args.samples, transform=transform)
+    nonmember_data = build_nonmember_dataset(
+        num_samples=args.samples,
+        transform=transform,
+        dataset_name=dataset_name,
+        allow_download=args.allow_download,
+    )
     member_loader = DataLoader(member_data, batch_size=args.batch_size, shuffle=False)
     nonmember_loader = DataLoader(nonmember_data, batch_size=args.batch_size, shuffle=False)
 
-    victim = build_model().to(device)
+    victim = build_model(model_name=args.model).to(device)
     victim.load_state_dict(torch.load(args.victim_path, map_location=device))
     victim.eval()
 
@@ -140,7 +153,7 @@ def main():
 
     shadow_train = build_member_dataset(num_samples=args.samples, transform=transform)
     shadow_loader = DataLoader(shadow_train, batch_size=args.batch_size, shuffle=True)
-    shadow_model = train_shadow_model(shadow_loader, device, epochs=args.epochs, lr=args.learning_rate)
+    shadow_model = train_shadow_model(shadow_loader, device, model_name=args.model, epochs=args.epochs, lr=args.learning_rate)
 
     shadow_member_logits, _ = extract_logits(shadow_model, member_loader, device)
     shadow_nonmember_logits, _ = extract_logits(shadow_model, nonmember_loader, device)

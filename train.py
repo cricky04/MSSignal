@@ -9,7 +9,37 @@ from PIL import Image
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets, transforms
-from torchvision.models import mobilenet_v2
+from torchvision.models import mobilenet_v2, resnet18
+
+
+class SimpleCNN(nn.Module):
+    def __init__(self, num_classes: int = 10):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(32),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(64),
+            nn.MaxPool2d(2),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(128),
+            nn.MaxPool2d(2),
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(128),
+        )
+        self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(128, num_classes),
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        return self.classifier(x)
 
 
 class SyntheticCIFAR10(Dataset):
@@ -63,13 +93,29 @@ def set_seed(seed: int = 42) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def build_model(num_classes: int = 10) -> nn.Module:
-    model = mobilenet_v2(weights=None)
-    model.classifier = nn.Sequential(
-        nn.Dropout(p=0.2),
-        nn.Linear(model.last_channel, num_classes),
-    )
-    return model
+def build_model(model_name: str = "mobilenet_v2", num_classes: int = 10) -> nn.Module:
+    normalized_name = model_name.lower().replace("-", "_")
+
+    if normalized_name in {"mobilenet", "mobilenet_v2"}:
+        model = mobilenet_v2(weights=None)
+        model.classifier = nn.Sequential(
+            nn.Dropout(p=0.2),
+            nn.Linear(model.last_channel, num_classes),
+        )
+        return model
+
+    if normalized_name in {"resnet", "resnet18", "resnet_18"}:
+        model = resnet18(weights=None)
+        model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        model.maxpool = nn.Identity()
+        model.fc = nn.Linear(model.fc.in_features, num_classes)
+        return model
+
+    if normalized_name in {"cnn", "simple_cnn", "simple_cnn"}:
+        return SimpleCNN(num_classes=num_classes)
+
+    available = ["mobilenet_v2", "resnet18", "cnn"]
+    raise ValueError(f"Unsupported model '{model_name}'. Choose from: {available}")
 
 
 def build_loaders(batch_size: int = 64, synthetic: bool = False):
@@ -143,17 +189,18 @@ def train_one_epoch(model: nn.Module, loader: DataLoader, optimizer: torch.optim
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train a MobileNetV2 classifier on CIFAR-10.")
+    parser = argparse.ArgumentParser(description="Train a CIFAR-10 classifier with a configurable backbone.")
+    parser.add_argument("--model", choices=["mobilenet_v2", "resnet18", "cnn"], default="mobilenet_v2", help="Model backbone to train.")
     parser.add_argument("--epochs", '-e', type=int, default=10, help="Number of training epochs.")
     parser.add_argument("--batch-size", '-b', type=int, default=64, help="Training batch size.")
     parser.add_argument("--learning-rate", '-lr', type=float, default=3e-4, help="Optimizer learning rate.")
-    parser.add_argument("--output", '-o', type=str, default="mobilenet_cifar10.pth", help="Output model file path.")
+    parser.add_argument("--output", '-o', type=str, default="model_cifar10.pth", help="Output model file path.")
     parser.add_argument("--synthetic", action="store_true", help="Use synthetic CIFAR-like data instead of downloading the dataset.")
     args = parser.parse_args()
 
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = build_model()
+    model = build_model(model_name=args.model)
     model.to(device)
 
     train_loader, test_loader = build_loaders(batch_size=args.batch_size, synthetic=args.synthetic)

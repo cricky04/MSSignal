@@ -11,8 +11,8 @@ from torchvision import datasets, transforms
 from train import build_model, set_seed
 
 
-def load_victim(path: str, device: torch.device):
-    model = build_model()
+def load_victim(path: str, device: torch.device, model_name: str = "mobilenet_v2"):
+    model = build_model(model_name=model_name)
     state_dict = torch.load(path, map_location=device)
     model.load_state_dict(state_dict)
     model.to(device)
@@ -91,7 +91,9 @@ def distill(victim, surrogate, loader, optimizer, device, temperature: float = 5
 
 def main():
     parser = argparse.ArgumentParser(description="Simulate a model stealing attack using knowledge distillation.")
-    parser.add_argument("--victim-path", type=str, default="mobilenet_cifar10.pth", help="Path to the victim model checkpoint.")
+    parser.add_argument("--victim-path", type=str, default="model_cifar10.pth", help="Path to the victim model checkpoint.")
+    parser.add_argument("--victim-model", choices=["mobilenet_v2", "resnet18", "cnn"], default="mobilenet_v2", help="Victim model architecture.")
+    parser.add_argument("--surrogate-model", choices=["mobilenet_v2", "resnet18", "cnn"], default="mobilenet_v2", help="Surrogate model architecture.")
     parser.add_argument("--epochs", type=int, default=8, help="Number of distillation epochs.")
     parser.add_argument("--batch-size", type=int, default=64, help="Query batch size.")
     parser.add_argument("--learning-rate", type=float, default=1e-3, help="Surrogate optimizer learning rate.")
@@ -103,8 +105,8 @@ def main():
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    victim = load_victim(args.victim_path, device)
-    surrogate = build_model().to(device)
+    victim = load_victim(args.victim_path, device, model_name=args.victim_model)
+    surrogate = build_model(model_name=args.surrogate_model).to(device)
     optimizer = torch.optim.AdamW(surrogate.parameters(), lr=args.learning_rate)
     query_loader = build_query_loader(batch_size=args.batch_size, num_samples=args.num_query_samples, use_svhn=(args.dataset == "svhn"))
 
@@ -113,7 +115,7 @@ def main():
         agreement = evaluate_agreement(victim, surrogate, query_loader, device)
         print(f"Epoch {epoch + 1}/{args.epochs} | distillation_loss={loss:.4f} | agreement={agreement:.4f}")
 
-    attack_path = Path("surrogate_mobilenet_cifar10.pth")
+    attack_path = Path(f"surrogate_{args.surrogate_model}_cifar10.pth")
     torch.save(surrogate.state_dict(), attack_path)
     print(f"Saved surrogate model to {attack_path.resolve()}")
 
