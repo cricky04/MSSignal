@@ -9,7 +9,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision import datasets, transforms
 
-from train import SyntheticCIFAR10, build_model, set_seed
+from train import SyntheticCIFAR10, build_model, normalize_model_name, set_seed
 
 
 def build_member_dataset(num_samples: int = 500, transform=None):
@@ -110,7 +110,7 @@ def train_attack_classifier(features_in, labels_in, features_out, labels_out):
 def main():
     parser = argparse.ArgumentParser(description="Membership inference attack against a victim model.")
     parser.add_argument("--victim-path", type=str, default="model_cifar10.pth", help="Path to victim checkpoint.")
-    parser.add_argument("--model", choices=["mobilenet_v2", "resnet18", "cnn"], default="mobilenet_v2", help="Model architecture to train and attack.")
+    parser.add_argument("--model", type=str, default="mobilenet_v2", help="Model architecture to train and attack (e.g. mobilenet_v2, resnet18, cnn, resnet-18).")
     parser.add_argument("--epochs", type=int, default=5, help="Shadow-model training epochs.")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size.")
     parser.add_argument("--learning-rate", type=float, default=1e-3, help="Attack training rate.")
@@ -122,6 +122,7 @@ def main():
 
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_name = normalize_model_name(args.model)
 
     transform = transforms.Compose(
         [
@@ -144,7 +145,7 @@ def main():
     member_loader = DataLoader(member_data, batch_size=args.batch_size, shuffle=False)
     nonmember_loader = DataLoader(nonmember_data, batch_size=args.batch_size, shuffle=False)
 
-    victim = build_model(model_name=args.model).to(device)
+    victim = build_model(model_name=model_name).to(device)
     victim.load_state_dict(torch.load(args.victim_path, map_location=device))
     victim.eval()
 
@@ -153,7 +154,7 @@ def main():
 
     shadow_train = build_member_dataset(num_samples=args.samples, transform=transform)
     shadow_loader = DataLoader(shadow_train, batch_size=args.batch_size, shuffle=True)
-    shadow_model = train_shadow_model(shadow_loader, device, model_name=args.model, epochs=args.epochs, lr=args.learning_rate)
+    shadow_model = train_shadow_model(shadow_loader, device, model_name=model_name, epochs=args.epochs, lr=args.learning_rate)
 
     shadow_member_logits, _ = extract_logits(shadow_model, member_loader, device)
     shadow_nonmember_logits, _ = extract_logits(shadow_model, nonmember_loader, device)
