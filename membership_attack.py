@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -12,11 +13,27 @@ from train import SyntheticCIFAR10, build_model, set_seed
 
 
 def build_member_dataset(num_samples: int = 500, transform=None):
-    return SyntheticCIFAR10(num_samples=num_samples, transform=transform)
-
-
-def build_nonmember_dataset(num_samples: int = 500, transform=None):
     dataset = SyntheticCIFAR10(num_samples=num_samples, transform=transform)
+    return dataset
+
+
+def build_nonmember_dataset(num_samples: int = 500, transform=None, allow_download: bool = False):
+    dataset_path = "./data"
+    dataset_exists = False
+    if Path(dataset_path, "cifar-10-batches-py").exists():
+        dataset_exists = True
+
+    if not dataset_exists and allow_download:
+        dataset = datasets.CIFAR10(root=dataset_path, train=False, download=True, transform=transform)
+    elif not dataset_exists:
+        raise FileNotFoundError(
+            "CIFAR-10 test data is not available locally. Download it first or pass --allow-download."
+        )
+    else:
+        dataset = datasets.CIFAR10(root=dataset_path, train=False, download=False, transform=transform)
+
+    if num_samples < len(dataset):
+        dataset = torch.utils.data.Subset(dataset, list(range(num_samples)))
     return dataset
 
 
@@ -87,7 +104,9 @@ def main():
     parser.add_argument("--epochs", type=int, default=5, help="Shadow-model training epochs.")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size.")
     parser.add_argument("--learning-rate", type=float, default=1e-3, help="Attack training rate.")
-    parser.add_argument("--samples", type=int, default=500, help="Samples per class for shadow/member set.")
+    parser.add_argument("--samples", type=int, default=500, help="Number of CIFAR-10 test samples to use as non-members.")
+    parser.add_argument("--use-real-cifar-test", action="store_true", help="Use the real CIFAR-10 test set as the non-member pool.")
+    parser.add_argument("--allow-download", action="store_true", help="Allow downloading CIFAR-10 when the test split is missing.")
     args = parser.parse_args()
 
     set_seed(42)
@@ -101,7 +120,14 @@ def main():
     )
 
     member_data = build_member_dataset(num_samples=args.samples, transform=transform)
-    nonmember_data = build_nonmember_dataset(num_samples=args.samples, transform=transform)
+    if args.use_real_cifar_test:
+        nonmember_data = build_nonmember_dataset(
+            num_samples=args.samples,
+            transform=transform,
+            allow_download=args.allow_download,
+        )
+    else:
+        nonmember_data = build_nonmember_dataset(num_samples=args.samples, transform=transform, allow_download=args.allow_download)
     member_loader = DataLoader(member_data, batch_size=args.batch_size, shuffle=False)
     nonmember_loader = DataLoader(nonmember_data, batch_size=args.batch_size, shuffle=False)
 
