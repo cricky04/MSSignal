@@ -91,7 +91,7 @@ def distill(victim, surrogate, loader, optimizer, device, temperature: float = 5
 
 def main():
     parser = argparse.ArgumentParser(description="Simulate a model stealing attack using knowledge distillation.")
-    parser.add_argument("--victim-path", type=str, default="model_cifar10.pth", help="Path to the victim model checkpoint.")
+    parser.add_argument("--victim-path", type=str, default="mobilenet_cifar10.pth", help="Path to the victim model checkpoint.")
     parser.add_argument("--victim-model", type=str, default="mobilenet_v2", help="Victim model architecture (e.g. mobilenet_v2, resnet18, cnn, resnet-18).")
     parser.add_argument("--surrogate-model", type=str, default="mobilenet_v2", help="Surrogate model architecture (e.g. mobilenet_v2, resnet18, cnn, resnet-18).")
     parser.add_argument("--epochs", type=int, default=8, help="Number of distillation epochs.")
