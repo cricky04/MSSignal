@@ -8,6 +8,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
+from config import ConfigLogger
 from train import build_model, normalize_model_name, set_seed
 
 
@@ -94,7 +95,7 @@ def main():
     parser.add_argument("--victim-path", type=str, default="mobilenet_cifar10.pth", help="Path to the victim model checkpoint.")
     parser.add_argument("--victim-model", type=str, default="mobilenet_v2", help="Victim model architecture (e.g. mobilenet_v2, resnet18, cnn, resnet-18).")
     parser.add_argument("--surrogate-model", type=str, default="mobilenet_v2", help="Surrogate model architecture (e.g. mobilenet_v2, resnet18, cnn, resnet-18).")
-    parser.add_argument("--epochs", type=int, default=8, help="Number of distillation epochs.")
+    parser.add_argument("--epochs", "-e", type=int, default=8, help="Number of distillation epochs.")
     parser.add_argument("--batch-size", type=int, default=64, help="Query batch size.")
     parser.add_argument("--learning-rate", type=float, default=1e-3, help="Surrogate optimizer learning rate.")
     parser.add_argument("--temperature", type=float, default=5.0, help="Softmax temperature for distillation.")
@@ -117,9 +118,16 @@ def main():
         agreement = evaluate_agreement(victim, surrogate, query_loader, device)
         print(f"Epoch {epoch + 1}/{args.epochs} | distillation_loss={loss:.4f} | agreement={agreement:.4f}")
 
-    attack_path = Path(f"surrogate_{surrogate_model_name}_cifar10.pth")
+    # Create checkpoint directory and save model + config
+    checkpoint_name = f"surrogate_{surrogate_model_name}_{args.dataset}"
+    checkpoint_dir = ConfigLogger.create_checkpoint_dir(checkpoint_name)
+    attack_path = checkpoint_dir / f"{checkpoint_name}.pth"
     torch.save(surrogate.state_dict(), attack_path)
     print(f"Saved surrogate model to {attack_path.resolve()}")
+
+    # Save hyperparameters to YAML in the same directory
+    config_path = ConfigLogger.save_stealing_config(args, checkpoint_dir)
+    print(f"Saved stealing config to {config_path.resolve()}")
 
     final_agreement = evaluate_agreement(victim, surrogate, query_loader, device)
     print(f"Final agreement with victim: {final_agreement:.4f}")

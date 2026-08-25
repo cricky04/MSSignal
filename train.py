@@ -11,6 +11,8 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets, transforms
 from torchvision.models import mobilenet_v2, resnet18
 
+from config import ConfigLogger
+
 
 class SimpleCNN(nn.Module):
     def __init__(self, num_classes: int = 10):
@@ -231,10 +233,16 @@ def main():
         best_accuracy = max(best_accuracy, valid_acc)
         print(f"Epoch {epoch + 1}/{args.epochs} | lr={optimizer.param_groups[0]['lr']:.5f} | train_loss={train_loss:.4f} | val_loss={valid_loss:.4f} | val_acc={valid_acc:.4f}")
 
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Create checkpoint directory and save model + config
+    checkpoint_name = f"train_{model_name}"
+    checkpoint_dir = ConfigLogger.create_checkpoint_dir(checkpoint_name)
+    output_path = checkpoint_dir / args.output
     torch.save(model.state_dict(), output_path)
     print(f"Saved model to {output_path.resolve()}")
+
+    # Save hyperparameters to YAML in the same directory
+    config_path = ConfigLogger.save_training_config(args, checkpoint_dir)
+    print(f"Saved training config to {config_path.resolve()}")
 
     final_loss, final_acc = evaluate(model, test_loader, device)
     print(f"Final test loss: {final_loss:.4f}")
